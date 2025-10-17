@@ -590,7 +590,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             status: new Date(comandaData.termen_limita) < new Date() ? 'Întârziată' : 'În progres',
           };
           setComenzi(prev => (prev.some(c => c.id === newComanda.id) ? prev : [...prev, newComanda]));
-          toast.success(`Comanda inserată în DB: id=${comandaId}`);
+          toast.success('Comanda a fost adăugată cu succes.');
         } catch (err) {
           console.error('Supabase addComanda error:', err);
           // fallback to local: if newDoctor/newPacient weren't created locally yet, create them now
