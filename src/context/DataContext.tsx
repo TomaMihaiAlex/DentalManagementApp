@@ -152,24 +152,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               const deletedDoctorId = Number(oldRow.id);
               setDoctori(prev => prev.filter(d => d.id !== deletedDoctorId));
               setPacienti(prev => prev.filter(p => p.id_doctor !== deletedDoctorId));
-              // Remove comenzi referencing this doctor from local state
-              setComenzi(prev => prev.filter(c => c.id_doctor !== deletedDoctorId));
-              // Also remove them from Supabase if configured
-              if (supabase) {
-                try {
-                  const { data: idsRes, error: idsErr } = await supabase.from('comenzi').select('id').eq('id_doctor', deletedDoctorId);
-                  if (!idsErr && idsRes && idsRes.length) {
-                    const ids = idsRes.map((r: any) => r.id);
-                    await supabase.from('comanda_produse').delete().in('comanda_id', ids);
-                    await supabase.from('comenzi').delete().in('id', ids);
-                  } else {
-                    // Fallback: attempt direct delete of comenzi by doctor id
-                    try { await supabase.from('comenzi').delete().eq('id_doctor', deletedDoctorId); } catch (_) {}
-                  }
-                } catch (e) {
-                  console.error('Error deleting comenzi for deleted doctor', e);
-                }
-              }
+              // Mark comenzi referencing this doctor as invalid instead of deleting them
+              setComenzi(prev => prev.map(c => c.id_doctor === deletedDoctorId ? { ...c, invalid: true } : c));
+              // Do not perform automatic destructive DB deletes here. Keep orders for review.
             }
             break;
           }
@@ -190,21 +175,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               const deletedPacId = Number(oldRow.id);
               setPacienti(prev => prev.filter(p => p.id !== deletedPacId));
               setDoctori(prev => prev.map(d => ({ ...d, pacienti: d.pacienti.filter(p => p.id !== deletedPacId) })));
-              setComenzi(prev => prev.filter(c => c.id_pacient !== deletedPacId));
-              if (supabase) {
-                try {
-                  const { data: idsRes, error: idsErr } = await supabase.from('comenzi').select('id').eq('id_pacient', deletedPacId);
-                  if (!idsErr && idsRes && idsRes.length) {
-                    const ids = idsRes.map((r: any) => r.id);
-                    await supabase.from('comanda_produse').delete().in('comanda_id', ids);
-                    await supabase.from('comenzi').delete().in('id', ids);
-                  } else {
-                    try { await supabase.from('comenzi').delete().eq('id_pacient', deletedPacId); } catch (_) {}
-                  }
-                } catch (e) {
-                  console.error('Error deleting comenzi for deleted pacient', e);
-                }
-              }
+              // Mark comenzi referencing this pacient as invalid instead of deleting them
+              setComenzi(prev => prev.map(c => c.id_pacient === deletedPacId ? { ...c, invalid: true } : c));
+              // Do not perform automatic destructive DB deletes here. Keep orders for review.
             }
             break;
           }
@@ -392,15 +365,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           toast.error('Eroare la ștergerea în Supabase. Se folosește ștergerea locală.');
         }
         setDoctori(prev => prev.filter(d => d.id !== doctorId));
-        setComenzi(prev => prev.filter(c => c.id_doctor !== doctorId));
+        // mark related comenzi invalid rather than deleting them
+        setComenzi(prev => prev.map(c => c.id_doctor === doctorId ? { ...c, invalid: true } : c));
+        // remove pacient rows locally (doctor deleted) but keep orders
         setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
-        toast.success('Doctorul și datele asociate au fost șterse.');
+        toast.success('Doctorul a fost șters. Comenzile asociate au fost marcate ca invalide pentru revizuire.');
       })();
     } else {
       setDoctori(prev => prev.filter(d => d.id !== doctorId));
-      setComenzi(prev => prev.filter(c => c.id_doctor !== doctorId));
+      setComenzi(prev => prev.map(c => c.id_doctor === doctorId ? { ...c, invalid: true } : c));
       setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
-      toast.success('Doctorul și datele asociate au fost șterse.');
+      toast.success('Doctorul a fost șters. Comenzile asociate au fost marcate ca invalide pentru revizuire.');
     }
   };
 
