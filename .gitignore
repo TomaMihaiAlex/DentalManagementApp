@@ -1,2 +1,10 @@
 node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+/*.log
+/.DS_Store
+/.idea
+/.vscodenode_modules/
 .env
