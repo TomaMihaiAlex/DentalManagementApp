@@ -38,6 +38,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   // refs to hold latest doctori/pacienti for realtime handlers (avoid stale closures)
   const doctoriRef = React.useRef<Doctor[]>(doctori);
   const pacientiRef = React.useRef<Pacient[]>(pacienti);
+  // set of comanda ids for which invalid-toasts should be suppressed (e.g., local finalize action)
+  const suppressedInvalidToastIdsRef = React.useRef<Set<number>>(new Set());
 
   React.useEffect(() => { doctoriRef.current = doctori; }, [doctori]);
   React.useEffect(() => { pacientiRef.current = pacienti; }, [pacienti]);
@@ -108,17 +110,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           tehnician: r.tehnician || undefined,
         } as Comanda));
 
-        // Mark any orders that reference a missing doctor or pacient as invalid (do not delete automatically)
-        const filteredComenzi = (loadedComenzi || []).map(c => {
-          const hasDoctor = loadedDoctori.some(d => d.id === c.id_doctor);
-          const hasPacient = loadedPacienti.some(p => p.id === c.id_pacient);
-          if (!hasDoctor || !hasPacient) {
-            console.warn('Found comanda with missing doctor/pacient, marking invalid:', c.id);
-            // mark invalid locally so UI can surface it for review; do not delete from DB automatically
-            return { ...c, invalid: true } as Comanda;
-          }
-          return c;
-        });
+        // Keep all loaded comenzi as-is (do not mark or delete), even if related doctor/pacient rows are missing
+        const filteredComenzi = (loadedComenzi || []);
 
         // update local state
         setProduse(loadedProduse.length ? loadedProduse : MOCK_PRODUSE);
@@ -159,9 +152,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               const deletedDoctorId = Number(oldRow.id);
               setDoctori(prev => prev.filter(d => d.id !== deletedDoctorId));
               setPacienti(prev => prev.filter(p => p.id_doctor !== deletedDoctorId));
-              // Mark comenzi referencing this doctor as invalid instead of deleting them
-              setComenzi(prev => prev.map(c => c.id_doctor === deletedDoctorId ? { ...c, invalid: true } : c));
-              // Do not perform automatic destructive DB deletes here. Keep orders for review.
+              // Keep related comenzi intact (do not mark or delete them automatically)
             }
             break;
           }
@@ -182,9 +173,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               const deletedPacId = Number(oldRow.id);
               setPacienti(prev => prev.filter(p => p.id !== deletedPacId));
               setDoctori(prev => prev.map(d => ({ ...d, pacienti: d.pacienti.filter(p => p.id !== deletedPacId) })));
-              // Mark comenzi referencing this pacient as invalid instead of deleting them
-              setComenzi(prev => prev.map(c => c.id_pacient === deletedPacId ? { ...c, invalid: true } : c));
-              // Do not perform automatic destructive DB deletes here. Keep orders for review.
+              // Keep related comenzi intact (do not mark or delete them automatically)
             }
             break;
           }
@@ -234,7 +223,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                     invalid: true,
                   };
                   setComenzi(prev => (prev.some(x => x.id === nc.id) ? prev : [...prev, nc]));
-                  toast.error(`Comanda (id=${badId}) este invalidă (doctor/pacient lipsă). Verifică datele.`);
+                  // if this id is suppressed (we're finalizing locally), don't show the invalid toast
+                  if (!suppressedInvalidToastIdsRef.current.has(badId)) {
+                    toast.error(`Comanda (id=${badId}) este invalidă (doctor/pacient lipsă). Verifică datele.`);
+                  }
                 } else {
                 const nc: Comanda = {
                   id: Number(newRow.id),
@@ -258,7 +250,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                 const badId = Number(newRow.id);
                 console.warn('Realtime UPDATE comanda references missing doctor/pacient, marking invalid id=', badId);
                 setComenzi(prev => prev.map(c => c.id === badId ? { ...c, invalid: true, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
-                toast.error(`Comanda (id=${badId}) este acum invalidă (doctor/pacient lipsă). Verifică datele.`);
+                // suppress toast if this id is under suppression
+                if (!suppressedInvalidToastIdsRef.current.has(badId)) {
+                  toast.error(`Comanda (id=${badId}) este acum invalidă (doctor/pacient lipsă). Verifică datele.`);
+                }
               } else {
                 setComenzi(prev => prev.map(c => c.id === Number(newRow.id) ? { ...c, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
               }
@@ -373,17 +368,14 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           toast.error('Eroare la ștergerea în Supabase. Se folosește ștergerea locală.');
         }
         setDoctori(prev => prev.filter(d => d.id !== doctorId));
-        // mark related comenzi invalid rather than deleting them
-        setComenzi(prev => prev.map(c => c.id_doctor === doctorId ? { ...c, invalid: true } : c));
-        // remove pacient rows locally (doctor deleted) but keep orders
+        // Keep related comenzi intact; only remove pacient rows locally
         setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
-        toast.success('Doctorul a fost șters. Comenzile asociate au fost marcate ca invalide pentru revizuire.');
+        toast.success('Doctorul a fost șters.');
       })();
     } else {
       setDoctori(prev => prev.filter(d => d.id !== doctorId));
-      setComenzi(prev => prev.map(c => c.id_doctor === doctorId ? { ...c, invalid: true } : c));
       setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
-      toast.success('Doctorul a fost șters. Comenzile asociate au fost marcate ca invalide pentru revizuire.');
+      toast.success('Doctorul a fost șters.');
     }
   };
 
@@ -699,21 +691,29 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const finalizeComanda = (comandaId: number, tehnician: string) => {
-    if (supabase) {
-      (async () => {
-        const now = new Date().toISOString();
-        const { error } = await supabase.from('comenzi').update({ status: 'Finalizată', data_finalizare: now, tehnician }).eq('id', comandaId);
-        if (error) {
-          console.error('Supabase finalizeComanda error:', error);
-          toast.error('Eroare la marcarea comenzii ca finalizată în Supabase. Se folosește actualizarea locală.');
+    // Suppress invalid-toasts that might be triggered by realtime events for this comanda
+    suppressedInvalidToastIdsRef.current.add(comandaId);
+    const done = async () => {
+      try {
+        if (supabase) {
+          const now = new Date().toISOString();
+          const { error } = await supabase.from('comenzi').update({ status: 'Finalizată', data_finalizare: now, tehnician }).eq('id', comandaId);
+          if (error) {
+            console.error('Supabase finalizeComanda error:', error);
+            toast.error('Eroare la marcarea comenzii ca finalizată în Supabase. Se folosește actualizarea locală.');
+          }
+          setComenzi(prev => prev.map(c => c.id === comandaId ? { ...c, status: 'Finalizată', data_finalizare: now, tehnician } : c));
+        } else {
+          setComenzi(prev => prev.map(c => c.id === comandaId ? { ...c, status: 'Finalizată', data_finalizare: new Date().toISOString(), tehnician } : c));
         }
-        setComenzi(prev => prev.map(c => c.id === comandaId ? { ...c, status: 'Finalizată', data_finalizare: now, tehnician } : c));
-        toast.success(`Comanda a fost marcată ca finalizată.`);
-      })();
-    } else {
-      setComenzi(prev => prev.map(c => c.id === comandaId ? { ...c, status: 'Finalizată', data_finalizare: new Date().toISOString(), tehnician } : c));
-      toast.success(`Comanda a fost marcată ca finalizată.`);
-    }
+        // single success toast only
+        toast.success('Comanda a fost marcată ca finalizată.');
+      } finally {
+        // remove suppression after a short delay to ensure realtime handlers fired during update are suppressed
+        setTimeout(() => suppressedInvalidToastIdsRef.current.delete(comandaId), 1000);
+      }
+    };
+    done();
   };
 
   const reopenComanda = (comandaId: number) => {
