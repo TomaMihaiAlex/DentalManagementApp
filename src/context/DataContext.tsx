@@ -223,10 +223,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                     invalid: true,
                   };
                   setComenzi(prev => (prev.some(x => x.id === nc.id) ? prev : [...prev, nc]));
-                  // if this id is suppressed (we're finalizing locally), don't show the invalid toast
-                  if (!suppressedInvalidToastIdsRef.current.has(badId)) {
-                    toast.error(`Comanda (id=${badId}) este invalidă (doctor/pacient lipsă). Verifică datele.`);
-                  }
+                  // invalid comanda detected; suppressed toasts prevent user noise
+                  // (no toast shown intentionally)
                 } else {
                 const nc: Comanda = {
                   id: Number(newRow.id),
@@ -250,10 +248,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                 const badId = Number(newRow.id);
                 console.warn('Realtime UPDATE comanda references missing doctor/pacient, marking invalid id=', badId);
                 setComenzi(prev => prev.map(c => c.id === badId ? { ...c, invalid: true, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
-                // suppress toast if this id is under suppression
-                if (!suppressedInvalidToastIdsRef.current.has(badId)) {
-                  toast.error(`Comanda (id=${badId}) este acum invalidă (doctor/pacient lipsă). Verifică datele.`);
-                }
+                // invalid comanda detected on update; do not show a toast here
               } else {
                 setComenzi(prev => prev.map(c => c.id === Number(newRow.id) ? { ...c, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
               }
@@ -360,23 +355,50 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const deleteDoctor = (doctorId: number) => {
-    if (supabase) {
-      (async () => {
-        const { error } = await supabase.from('doctori').delete().eq('id', doctorId);
-        if (error) {
-          console.error('Supabase deleteDoctor error:', error);
-          toast.error('Eroare la ștergerea în Supabase. Se folosește ștergerea locală.');
+    // When deleting a doctor, also delete their patients from the DB.
+    // Suppress invalid-toasts for any comenzi that reference this doctor or their patients while the operation runs.
+    const pacientIds = pacienti.filter(p => p.id_doctor === doctorId).map(p => p.id);
+    const affectedComandaIds = comenzi.filter(c => c.id_doctor === doctorId || pacientIds.includes(c.id_pacient)).map(c => c.id);
+    // add to suppression set
+    for (const id of affectedComandaIds) suppressedInvalidToastIdsRef.current.add(id);
+
+    const done = async () => {
+      try {
+        if (supabase) {
+          try {
+            // delete pacienti associated with this doctor first
+            const { error: pacError } = await supabase.from('pacienti').delete().eq('id_doctor', doctorId);
+            if (pacError) {
+              console.error('Supabase deletePacienti for doctor error:', pacError);
+              toast.error('Eroare la ștergerea pacienților în Supabase. Se folosește ștergerea locală.');
+            }
+            // then delete doctor
+            const { error: docError } = await supabase.from('doctori').delete().eq('id', doctorId);
+            if (docError) {
+              console.error('Supabase deleteDoctor error:', docError);
+              toast.error('Eroare la ștergerea doctorului în Supabase. Se folosește ștergerea locală.');
+            }
+          } catch (e) {
+            console.error('Supabase deleteDoctor flow error', e);
+            toast.error('Eroare la ștergerea în Supabase. Se folosește ștergerea locală.');
+          }
         }
+
+        // Always update local state to remove doctor and their patients
         setDoctori(prev => prev.filter(d => d.id !== doctorId));
-        // Keep related comenzi intact; only remove pacient rows locally
         setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
+
+        // Only show one success toast
         toast.success('Doctorul a fost șters.');
-      })();
-    } else {
-      setDoctori(prev => prev.filter(d => d.id !== doctorId));
-      setPacienti(prev => prev.filter(p => p.id_doctor !== doctorId));
-      toast.success('Doctorul a fost șters.');
-    }
+      } finally {
+        // remove suppression after a short delay to ensure realtime handlers fired during update are suppressed
+        setTimeout(() => {
+          for (const id of affectedComandaIds) suppressedInvalidToastIdsRef.current.delete(id);
+        }, 1000);
+      }
+    };
+
+    done();
   };
 
   // Produs CRUD
