@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const Login: React.FC = () => {
   const [password, setPassword] = useState('');
@@ -20,7 +20,7 @@ const Login: React.FC = () => {
 
   return (
     <>
-      <Toaster position="top-center" reverseOrder={false} />
+  {/* Global Toaster is provided in App.tsx; don't render another here */}
       <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
         <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
           <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">

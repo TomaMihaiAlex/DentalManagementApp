@@ -1,4 +1,4 @@
-import React from 'react';
+// Using automatic JSX runtime
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
@@ -46,7 +46,17 @@ const App = () => {
   return (
     <AuthProvider>
       <DataProvider>
-        <Toaster position="top-center" reverseOrder={false} />
+        <Toaster
+          position="top-center"
+          reverseOrder={false}
+          toastOptions={{
+            // Default options for all toasts
+            duration: 3000,
+            style: {
+              maxWidth: '90%',
+            },
+          }}
+        />
         <AppRoutes />
       </DataProvider>
     </AuthProvider>
