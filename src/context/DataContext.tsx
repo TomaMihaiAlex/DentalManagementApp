@@ -532,7 +532,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               newDoctor = { id: insertedDoc.id ?? Date.now(), nume: insertedDoc.nume, email: insertedDoc.email ?? '', telefon: insertedDoc.telefon ?? '', pacienti: [] };
               finalDoctorId = Number(insertedDoc.id ?? finalDoctorId);
               setDoctori(prev => [...prev, newDoctor!]);
-              toast.success(`Doctor inserat în DB: id=${finalDoctorId}, nume=${newDoctor.nume}`);
+              // suppressed intermediate toast: doctor inserted
             }
           }
 
@@ -550,7 +550,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               setPacienti(prev => [...prev, newPacient!]);
               // attach pacient to doctor locally if present
               setDoctori(prev => prev.map(d => d.id === finalDoctorId ? { ...d, pacienti: [...d.pacienti, newPacient!] } : d));
-              toast.success(`Pacient inserat în DB: id=${finalPacientId}, nume=${newPacient.nume}`);
+              // suppressed intermediate toast: pacient inserted
             }
           }
 
@@ -577,7 +577,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             console.warn(`${cpFailures.length} inserții comanda_produse au eșuat`, cpFailures);
             toast.error('Unele produse nu au fost salvate în baza de date. Verifică consola pentru detalii.');
           } else {
-            toast.success('Produsele comenzii au fost salvate în baza de date.');
+            // suppressed intermediate toast: products saved
           }
 
           // Update local state with Supabase data
@@ -590,7 +590,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             status: new Date(comandaData.termen_limita) < new Date() ? 'Întârziată' : 'În progres',
           };
           setComenzi(prev => (prev.some(c => c.id === newComanda.id) ? prev : [...prev, newComanda]));
-          toast.success('Comanda a fost adăugată cu succes.');
+          toast.success('Comanda a fost creata cu succes');
         } catch (err) {
           console.error('Supabase addComanda error:', err);
           // fallback to local: if newDoctor/newPacient weren't created locally yet, create them now
@@ -627,7 +627,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         status: new Date(comandaData.termen_limita) < new Date() ? 'Întârziată' : 'În progres',
       };
   setComenzi(prev => (prev.some(c => c.id === newComanda.id) ? prev : [...prev, newComanda]));
-      toast.success('Comanda a fost adăugată cu succes.');
+  toast.success('Comanda a fost creata cu succes');
     }
     return { newDoctor, newPacient };
   };
