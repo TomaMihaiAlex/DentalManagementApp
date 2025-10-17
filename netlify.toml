@@ -1,0 +1,29 @@
+[build]
+    command = "npm install && npm run build"
+  publish = "dist"
+  base = "/"
+  ignore = "false"  # Never skip build
+  force = "true"    # Force build even if no changes detected
+
+[build.environment]
+  NODE_VERSION = "18"
+  CI = "true"       # Ensure we're in CI mode
+  NETLIFY_BUILD_SKIP = "false"  # Never skip build
+  # Allow the scanner to ignore these VITE_* values which are intentionally
+  # embedded in the client bundle (Supabase anon key + public URL).
+  # These are public client-side values; do NOT put private keys here.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL"
+
+[build.processing]
+  skip_processing = false  # Ensure processing is not skipped
+
+[dev]
+  command = "vite"
+  port = 3000
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = true
