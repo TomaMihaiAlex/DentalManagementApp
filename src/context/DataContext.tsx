@@ -101,39 +101,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           tehnician: r.tehnician || undefined,
         } as Comanda));
 
-        // Remove any orders that reference a missing doctor or pacient.
-        const invalidComenzi = (loadedComenzi || []).filter(c => {
+        // Mark any orders that reference a missing doctor or pacient as invalid (do not delete automatically)
+        const filteredComenzi = (loadedComenzi || []).map(c => {
           const hasDoctor = loadedDoctori.some(d => d.id === c.id_doctor);
           const hasPacient = loadedPacienti.some(p => p.id === c.id_pacient);
-          return !hasDoctor || !hasPacient;
-        });
-
-        if (invalidComenzi.length > 0) {
-          const invalidIds = invalidComenzi.map(c => c.id);
-          console.warn('Found comenzi with missing doctor/pacient, will remove:', invalidIds);
-          try {
-            // delete related comanda_produse and then comenzi from Supabase
-            if (supabase) {
-              await supabase.from('comanda_produse').delete().in('comanda_id', invalidIds);
-              const { error: delErr } = await supabase.from('comenzi').delete().in('id', invalidIds);
-              if (delErr) {
-                console.error('Error deleting invalid comenzi from Supabase', delErr);
-                toast.error('A apărut o eroare la curățarea comenzilor invalide. Verifică consola.');
-              } else {
-                toast.success(`${invalidIds.length} comenzi invalide au fost șterse din baza de date.`);
-              }
-            } else {
-              // if no Supabase, just log — we'll not include them in local state
-              toast.success(`${invalidIds.length} comenzi invalide au fost eliminate din datele locale.`);
-            }
-          } catch (e) {
-            console.error('Error while removing invalid comenzi', e);
-            toast.error('Eroare la curățarea comenzilor invalide. Vezi consola pentru detalii.');
+          if (!hasDoctor || !hasPacient) {
+            console.warn('Found comanda with missing doctor/pacient, marking invalid:', c.id);
+            // mark invalid locally so UI can surface it for review; do not delete from DB automatically
+            return { ...c, invalid: true } as Comanda;
           }
-        }
-
-        // Filter out invalid comenzi before setting local state
-        const filteredComenzi = loadedComenzi.filter(c => loadedDoctori.some(d => d.id === c.id_doctor) && loadedPacienti.some(p => p.id === c.id_pacient));
+          return c;
+        });
 
         // update local state
         setProduse(loadedProduse.length ? loadedProduse : MOCK_PRODUSE);
@@ -256,22 +234,27 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             if (event === 'INSERT') {
               const doctorExists = doctori.some(d => d.id === Number(newRow.id_doctor));
               const pacientExists = pacienti.some(p => p.id === Number(newRow.id_pacient));
-              if (!doctorExists || !pacientExists) {
-                // remove invalid comanda from DB if possible
-                const badId = Number(newRow.id);
-                console.warn('Realtime INSERT comanda missing doctor/pacient, removing id=', badId);
-                if (supabase) {
-                  try {
-                    await supabase.from('comanda_produse').delete().eq('comanda_id', badId);
-                    await supabase.from('comenzi').delete().eq('id', badId);
-                    toast.success(`Comanda invalidă (id=${badId}) a fost ștearsă automat.`);
-                  } catch (e) {
-                    console.error('Error deleting invalid comanda on realtime insert', e);
-                  }
-                }
-                // ensure not added locally
-                setComenzi(prev => prev.filter(c => c.id !== badId));
-              } else {
+                if (!doctorExists || !pacientExists) {
+                  // mark invalid locally; avoid automatic DB deletes to prevent accidental data loss
+                  const badId = Number(newRow.id);
+                  console.warn('Realtime INSERT comanda missing doctor/pacient, marking invalid id=', badId);
+                  const nc: Comanda = {
+                    id: badId,
+                    id_doctor: Number(newRow.id_doctor),
+                    id_pacient: Number(newRow.id_pacient),
+                    produse: [],
+                    data_start: newRow.data_start,
+                    termen_limita: newRow.termen_limita,
+                    reducere: Number(newRow.reducere || 0),
+                    total: Number(newRow.total || 0),
+                    data_finalizare: newRow.data_finalizare || undefined,
+                    status: (newRow.status as any) || (new Date(newRow.termen_limita) < new Date() ? 'Întârziată' : 'În progres'),
+                    tehnician: newRow.tehnician || undefined,
+                    invalid: true,
+                  };
+                  setComenzi(prev => (prev.some(x => x.id === nc.id) ? prev : [...prev, nc]));
+                  toast.error(`Comanda (id=${badId}) este invalidă (doctor/pacient lipsă). Verifică datele.`);
+                } else {
                 const nc: Comanda = {
                   id: Number(newRow.id),
                   id_doctor: Number(newRow.id_doctor),
@@ -292,17 +275,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
               const pacientExists = pacienti.some(p => p.id === Number(newRow.id_pacient));
               if (!doctorExists || !pacientExists) {
                 const badId = Number(newRow.id);
-                console.warn('Realtime UPDATE comanda references missing doctor/pacient, removing id=', badId);
-                if (supabase) {
-                  try {
-                    await supabase.from('comanda_produse').delete().eq('comanda_id', badId);
-                    await supabase.from('comenzi').delete().eq('id', badId);
-                    toast.success(`Comanda invalidă (id=${badId}) a fost ștearsă automat.`);
-                  } catch (e) {
-                    console.error('Error deleting invalid comanda on realtime update', e);
-                  }
-                }
-                setComenzi(prev => prev.filter(c => c.id !== badId));
+                console.warn('Realtime UPDATE comanda references missing doctor/pacient, marking invalid id=', badId);
+                setComenzi(prev => prev.map(c => c.id === badId ? { ...c, invalid: true, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
+                toast.error(`Comanda (id=${badId}) este acum invalidă (doctor/pacient lipsă). Verifică datele.`);
               } else {
                 setComenzi(prev => prev.map(c => c.id === Number(newRow.id) ? { ...c, id_doctor: Number(newRow.id_doctor), id_pacient: Number(newRow.id_pacient), data_start: newRow.data_start, termen_limita: newRow.termen_limita, reducere: Number(newRow.reducere || 0), total: Number(newRow.total || 0), data_finalizare: newRow.data_finalizare || undefined, status: newRow.status || c.status, tehnician: newRow.tehnician || c.tehnician } : c));
               }
