@@ -717,34 +717,42 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const reopenComanda = (comandaId: number) => {
-    if (supabase) {
-      (async () => {
-        const found = comenzi.find(c => c.id === comandaId);
-        if (!found) return;
-        const newStatus = new Date(found.termen_limita) < new Date() ? 'Întârziată' : 'În progres';
-        const { error } = await supabase.from('comenzi').update({ status: newStatus, data_finalizare: null, tehnician: null }).eq('id', comandaId);
-        if (error) {
-          console.error('Supabase reopenComanda error:', error);
-          toast.error('Eroare la redeschiderea comenzii în Supabase. Se folosește actualizarea locală.');
-        }
-        setComenzi(prev => prev.map(c => {
+    // Suppress invalid-toasts that might be triggered by realtime events for this comanda
+    suppressedInvalidToastIdsRef.current.add(comandaId);
+    const done = async () => {
+      try {
+        if (supabase) {
+          const found = comenzi.find(c => c.id === comandaId);
+          if (!found) return;
+          const newStatus = new Date(found.termen_limita) < new Date() ? 'Întârziată' : 'În progres';
+          const { error } = await supabase.from('comenzi').update({ status: newStatus, data_finalizare: null, tehnician: null }).eq('id', comandaId);
+          if (error) {
+            console.error('Supabase reopenComanda error:', error);
+            toast.error('Eroare la redeschiderea comenzii în Supabase. Se folosește actualizarea locală.');
+          }
+          setComenzi(prev => prev.map(c => {
             if (c.id === comandaId) {
-                return { ...c, status: newStatus, data_finalizare: undefined, tehnician: undefined };
+              return { ...c, status: newStatus, data_finalizare: undefined, tehnician: undefined };
             }
             return c;
-        }));
-        toast.success('Comanda a fost redeschisă.');
-      })();
-    } else {
-      setComenzi(prev => prev.map(c => {
-        if (c.id === comandaId) {
-            const newStatus = new Date(c.termen_limita) < new Date() ? 'Întârziată' : 'În progres';
-            return { ...c, status: newStatus, data_finalizare: undefined, tehnician: undefined };
+          }));
+        } else {
+          setComenzi(prev => prev.map(c => {
+            if (c.id === comandaId) {
+              const newStatus = new Date(c.termen_limita) < new Date() ? 'Întârziată' : 'În progres';
+              return { ...c, status: newStatus, data_finalizare: undefined, tehnician: undefined };
+            }
+            return c;
+          }));
         }
-        return c;
-      }));
-      toast.success('Comanda a fost redeschisă.');
-    }
+        // single success toast only
+        toast.success('Comanda a fost redeschisă.');
+      } finally {
+        // remove suppression after a short delay to ensure realtime handlers fired during update are suppressed
+        setTimeout(() => suppressedInvalidToastIdsRef.current.delete(comandaId), 1000);
+      }
+    };
+    done();
   };
 
   const value = {
