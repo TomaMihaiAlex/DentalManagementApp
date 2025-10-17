@@ -35,6 +35,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [tehnicieni, setTehnicieni] = useState<Tehnician[]>(MOCK_TEHNICIENI);
   const [pacienti, setPacienti] = useState<Pacient[]>(MOCK_DOCTORI.flatMap(d => d.pacienti));
 
+  // refs to hold latest doctori/pacienti for realtime handlers (avoid stale closures)
+  const doctoriRef = React.useRef<Doctor[]>(doctori);
+  const pacientiRef = React.useRef<Pacient[]>(pacienti);
+
+  React.useEffect(() => { doctoriRef.current = doctori; }, [doctori]);
+  React.useEffect(() => { pacientiRef.current = pacienti; }, [pacienti]);
+
   // On mount, if Supabase client is configured, try to load all data from Supabase
   React.useEffect(() => {
     if (!supabase) return;
@@ -205,8 +212,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           }
           case 'comenzi': {
             if (event === 'INSERT') {
-              const doctorExists = doctori.some(d => d.id === Number(newRow.id_doctor));
-              const pacientExists = pacienti.some(p => p.id === Number(newRow.id_pacient));
+              // use refs to get the latest lists (avoid stale closure values)
+              const doctorExists = doctoriRef.current.some(d => d.id === Number(newRow.id_doctor));
+              const pacientExists = pacientiRef.current.some(p => p.id === Number(newRow.id_pacient));
                 if (!doctorExists || !pacientExists) {
                   // mark invalid locally; avoid automatic DB deletes to prevent accidental data loss
                   const badId = Number(newRow.id);
@@ -244,8 +252,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                 setComenzi(prev => (prev.some(x => x.id === nc.id) ? prev : [...prev, nc]));
               }
             } else if (event === 'UPDATE') {
-              const doctorExists = doctori.some(d => d.id === Number(newRow.id_doctor));
-              const pacientExists = pacienti.some(p => p.id === Number(newRow.id_pacient));
+              const doctorExists = doctoriRef.current.some(d => d.id === Number(newRow.id_doctor));
+              const pacientExists = pacientiRef.current.some(p => p.id === Number(newRow.id_pacient));
               if (!doctorExists || !pacientExists) {
                 const badId = Number(newRow.id);
                 console.warn('Realtime UPDATE comanda references missing doctor/pacient, marking invalid id=', badId);
