@@ -281,8 +281,25 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
                 placeholder={(selectedDoctorId || doctorInput.trim() !== '') ? 'Alege sau tastează pacient...' : 'Selectează mai întâi un doctor'}
                 value={pacientSearch || pacientInput}
                 onChange={e => {
-                  setPacientSearch(e.target.value);
-                  setPacientInput(e.target.value);
+                  const val = e.target.value;
+                  setPacientSearch(val);
+                  setPacientInput(val);
+                  setShowPacientSuggestions(true);
+                  const trimmed = val.trim().toLowerCase();
+                  // exact match -> select immediately
+                  const exact = pacientiList.find(p => p.nume.toLowerCase() === trimmed);
+                  if (exact) {
+                    setPacientInput(exact.nume);
+                    setPacientSearch('');
+                    setShowPacientSuggestions(false);
+                  } else {
+                    const options = pacientiList.filter(p => p.nume.toLowerCase().includes(trimmed));
+                    if (trimmed.length >= 2 && options.length === 1) {
+                      setPacientInput(options[0].nume);
+                      setPacientSearch('');
+                      setShowPacientSuggestions(false);
+                    }
+                  }
                 }}
                 onFocus={() => setShowPacientSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowPacientSuggestions(false), 150)}
