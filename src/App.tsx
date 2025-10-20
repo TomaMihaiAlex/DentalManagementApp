@@ -4,8 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import AppLayout from './components/AppLayout';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
 import Doctori from './pages/Doctori';
+import Dashboard from './pages/Dashboard';
 import Comenzi from './pages/Comenzi';
 import Produse from './pages/Produse';
 import Tehnicieni from './pages/Tehnicieni';
@@ -27,7 +27,8 @@ const AppRoutes = () => {
             <PrivateRoute>
               <AppLayout>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Navigate to="/comenzi" />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/doctori" element={<Doctori />} />
                   <Route path="/comenzi" element={<Comenzi />} />
                   <Route path="/produse" element={<Produse />} />

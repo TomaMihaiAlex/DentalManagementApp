@@ -4,9 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import TehnicianOrdersModal from '@/components/modals/TehnicianOrdersModal';
 import ConfirmFinalizeModal from '@/components/modals/ConfirmFinalizeModal';
 import ComandaModal from '@/components/modals/ComandaModal';
-import { formatCurrency } from '@/lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { DollarSign, ShoppingCart, CheckCircle, AlertCircle, UserCheck } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ShoppingCart, CheckCircle, AlertCircle, UserCheck } from 'lucide-react';
 import { isThisMonth, parseISO, getMonth, getYear } from 'date-fns';
 
 const Dashboard: React.FC = () => {
@@ -159,7 +158,6 @@ const Dashboard: React.FC = () => {
   };
 
   const summaryCards = [
-    { title: 'Venit Total (luna curentă)', value: formatCurrency(dashboardData.revenueThisMonth), icon: DollarSign, color: 'text-sky-500' },
     { title: 'Comenzi în Progres', value: dashboardData.inProgressOrders, icon: ShoppingCart, color: 'text-warning' },
     { title: 'Comenzi Finalizate', value: dashboardData.completedOrders, icon: CheckCircle, color: 'text-success' },
     { title: 'Comenzi Întârziate', value: dashboardData.delayedOrders, icon: AlertCircle, color: 'text-danger' },
@@ -181,26 +179,8 @@ const Dashboard: React.FC = () => {
         ))}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-5">
-        <Card className="md:col-span-3">
-          <CardHeader>
-            <CardTitle>Venit Lunar</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={dashboardData.monthlyRevenueData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${formatCurrency(Number(value))}`} />
-                <Tooltip cursor={{ fill: 'rgba(14, 165, 233, 0.1)' }} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '0.5rem' }} />
-                <Legend />
-                <Bar dataKey="Venit" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
+      <div className="grid gap-6 md:grid-cols-1"> 
+        <Card>
           <CardHeader>
             <CardTitle>Status Comenzi (%)</CardTitle>
           </CardHeader>

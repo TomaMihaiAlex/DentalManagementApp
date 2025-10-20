@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useState } from 'react';
+import React, { createContext, useContext, ReactNode, useState, useMemo } from 'react';
 import { Doctor, Comanda, Produs, Tehnician, Pacient } from '@/lib/types';
 import { MOCK_DOCTORI, MOCK_COMENZI, MOCK_PRODUSE, MOCK_TEHNICIENI } from '@/data/mock';
 import { supabase } from '@/lib/supabase';
@@ -34,6 +34,20 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [produse, setProduse] = useState<Produs[]>(MOCK_PRODUSE);
   const [tehnicieni, setTehnicieni] = useState<Tehnician[]>(MOCK_TEHNICIENI);
   const [pacienti, setPacienti] = useState<Pacient[]>(MOCK_DOCTORI.flatMap(d => d.pacienti));
+
+  // Expose sorted copies (case-insensitive, Romanian locale) so consumers always get alphabetical lists
+  const sortedProduse = useMemo(() => {
+    return [...produse].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'));
+  }, [produse]);
+
+  const sortedPacienti = useMemo(() => {
+    return [...pacienti].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'));
+  }, [pacienti]);
+
+  const sortedDoctori = useMemo(() => {
+    // keep pacienti arrays inside doctor objects sorted as well
+    return [...doctori].map(d => ({ ...d, pacienti: [...d.pacienti].sort((a,b) => a.nume.localeCompare(b.nume, 'ro')) })).sort((a,b) => a.nume.localeCompare(b.nume, 'ro'));
+  }, [doctori]);
 
   // refs to hold latest doctori/pacienti for realtime handlers (avoid stale closures)
   const doctoriRef = React.useRef<Doctor[]>(doctori);
@@ -114,10 +128,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         const filteredComenzi = (loadedComenzi || []);
 
         // update local state
-        setProduse(loadedProduse.length ? loadedProduse : MOCK_PRODUSE);
-        setPacienti(loadedPacienti.length ? loadedPacienti : MOCK_DOCTORI.flatMap(d => d.pacienti));
-        setDoctori(loadedDoctori.length ? loadedDoctori : MOCK_DOCTORI);
-        setTehnicieni(loadedTehnicieni.length ? loadedTehnicieni : MOCK_TEHNICIENI);
+  setProduse(loadedProduse.length ? loadedProduse.sort((a,b) => a.nume.localeCompare(b.nume, 'ro')) : MOCK_PRODUSE);
+  setPacienti(loadedPacienti.length ? loadedPacienti.sort((a,b) => a.nume.localeCompare(b.nume, 'ro')) : MOCK_DOCTORI.flatMap(d => d.pacienti));
+  setDoctori(loadedDoctori.length ? loadedDoctori.sort((a,b) => a.nume.localeCompare(b.nume, 'ro')) : MOCK_DOCTORI);
+  setTehnicieni(loadedTehnicieni.length ? loadedTehnicieni.sort((a,b) => a.nume.localeCompare(b.nume, 'ro')) : MOCK_TEHNICIENI);
         setComenzi(filteredComenzi.length ? filteredComenzi : MOCK_COMENZI);
 
         toast.success('Datele au fost încărcate din Supabase.');
@@ -145,7 +159,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           case 'doctori': {
             if (event === 'INSERT') {
               const d: Doctor = { id: Number(newRow.id), nume: newRow.nume, email: newRow.email || '', telefon: newRow.telefon || '', pacienti: [] };
-              setDoctori(prev => (prev.some(x => x.id === d.id) ? prev : [...prev, d]));
+              setDoctori(prev => (prev.some(x => x.id === d.id) ? prev : [...prev, d].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'))));
             } else if (event === 'UPDATE') {
               setDoctori(prev => prev.map(d => d.id === Number(newRow.id) ? { ...d, nume: newRow.nume, email: newRow.email || '', telefon: newRow.telefon || '' } : d));
             } else if (event === 'DELETE') {
@@ -159,7 +173,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           case 'pacienti': {
             if (event === 'INSERT') {
               const p: Pacient = { id: Number(newRow.id), nume: newRow.nume, id_doctor: Number(newRow.id_doctor) };
-              setPacienti(prev => (prev.some(x => x.id === p.id) ? prev : [...prev, p]));
+              setPacienti(prev => (prev.some(x => x.id === p.id) ? prev : [...prev, p].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'))));
               setDoctori(prev => prev.map(d => {
                 if (d.id !== p.id_doctor) return d;
                 const has = d.pacienti.some(x => x.id === p.id);
@@ -180,7 +194,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           case 'produse': {
             if (event === 'INSERT') {
               const pr: Produs = { id: Number(newRow.id), nume: newRow.nume, pret: Number(newRow.pret) };
-              setProduse(prev => (prev.some(x => x.id === pr.id) ? prev : [...prev, pr]));
+              setProduse(prev => (prev.some(x => x.id === pr.id) ? prev : [...prev, pr].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'))));
             } else if (event === 'UPDATE') {
               setProduse(prev => prev.map(p => p.id === Number(newRow.id) ? { ...p, nume: newRow.nume, pret: Number(newRow.pret) } : p));
             } else if (event === 'DELETE') {
@@ -191,7 +205,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           case 'tehnicieni': {
             if (event === 'INSERT') {
               const t: Tehnician = { id: Number(newRow.id), nume: newRow.nume };
-              setTehnicieni(prev => (prev.some(x => x.id === t.id) ? prev : [...prev, t]));
+              setTehnicieni(prev => (prev.some(x => x.id === t.id) ? prev : [...prev, t].sort((a,b) => a.nume.localeCompare(b.nume, 'ro'))));
             } else if (event === 'UPDATE') {
               setTehnicieni(prev => prev.map(t => t.id === Number(newRow.id) ? { ...t, nume: newRow.nume } : t));
             } else if (event === 'DELETE') {
@@ -502,6 +516,16 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   // Comanda CRUD
   const addComanda = (comandaData: any) => {
+    // Normalize: if id_doctor/id_pacient are strings, treat them as new entities
+    if (typeof comandaData.id_doctor === 'string') {
+      comandaData.id_doctor = comandaData.id_doctor.trim();
+      comandaData.isNewDoctor = true;
+    }
+    if (typeof comandaData.id_pacient === 'string') {
+      comandaData.id_pacient = comandaData.id_pacient.trim();
+      comandaData.isNewPacient = true;
+    }
+
     let finalDoctorId = comandaData.id_doctor;
     let finalPacientId = comandaData.id_pacient;
     let newDoctor: Doctor | undefined = undefined;
@@ -517,9 +541,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (comandaData.isNewPacient) {
-        newPacient = { id: Date.now(), nume: comandaData.id_pacient, id_doctor: finalDoctorId };
-        setPacienti(prev => [...prev, newPacient!]);
-        setDoctori(prev => prev.map(d => d.id === finalDoctorId ? { ...d, pacienti: [...d.pacienti, newPacient!] } : d));
+        newPacient = { id: Date.now(), nume: comandaData.id_pacient, id_doctor: finalDoctorId } as Pacient;
+        // update pacienti list and rebuild doctori.pacienti to keep them in sync
+        setPacienti(prev => {
+          const next = [...prev, newPacient!];
+          setDoctori(dprev => dprev.map(d => ({ ...d, pacienti: next.filter(p => p.id_doctor === d.id) })));
+          return next;
+        });
         finalPacientId = newPacient.id;
       }
     }
@@ -561,9 +589,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             if (insertedPac) {
               newPacient = { id: insertedPac.id ?? Date.now(), nume: insertedPac.nume, id_doctor: insertedPac.id_doctor } as Pacient;
               finalPacientId = Number(insertedPac.id ?? finalPacientId);
-              setPacienti(prev => [...prev, newPacient!]);
-              // attach pacient to doctor locally if present
-              setDoctori(prev => prev.map(d => d.id === finalDoctorId ? { ...d, pacienti: [...d.pacienti, newPacient!] } : d));
+              setPacienti(prev => {
+                const next = [...prev, newPacient!];
+                setDoctori(dprev => dprev.map(d => ({ ...d, pacienti: next.filter(p => p.id_doctor === d.id) })));
+                return next;
+              });
               // suppressed intermediate toast: pacient inserted
             }
           }
@@ -615,8 +645,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           }
           if (comandaData.isNewPacient && !newPacient) {
             newPacient = { id: Date.now(), nume: comandaData.id_pacient, id_doctor: finalDoctorId } as Pacient;
-            setPacienti(prev => [...prev, newPacient!]);
-            setDoctori(prev => prev.map(d => d.id === finalDoctorId ? { ...d, pacienti: [...d.pacienti, newPacient!] } : d));
+            setPacienti(prev => {
+              const next = [...prev, newPacient!];
+              setDoctori(dprev => dprev.map(d => ({ ...d, pacienti: next.filter(p => p.id_doctor === d.id) })));
+              return next;
+            });
             finalPacientId = newPacient.id;
           }
           const newComanda: Comanda = {
@@ -778,10 +811,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const value = {
-      doctori,
+      doctori: sortedDoctori,
       comenzi,
-      produse,
-    pacienti,
+      produse: sortedProduse,
+    pacienti: sortedPacienti,
       tehnicieni,
       addDoctor,
       updateDoctor,

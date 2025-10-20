@@ -45,20 +45,46 @@ export const exportComenziToExcel = (
         if (!doctor) continue;
 
         const comenziDoctor = groupedByDoctor[doctorId];
-        const productNames = produse.map(p => p.nume);
-        const headers = ['PACIENT', ...productNames.map(p => p.toUpperCase()), 'TOTAL'].map(h => h.toUpperCase());
-        
-        const sheetData = comenziDoctor.map(comanda => {
+        // Sort products alphabetically by name so exported columns are ordered
+        const sortedProduse = [...produse].sort((a, b) => a.nume.localeCompare(b.nume, 'ro'));
+
+        // Build a preliminary matrix of values so we can detect empty columns (columns that are all '-')
+        const preliminaryRows = comenziDoctor.map(comanda => {
             const pacient = doctor.pacienti.find(p => p.id === comanda.id_pacient);
             const row: (string | number)[] = [pacient?.nume || 'N/A'];
-            
-            produse.forEach(produs => {
+            sortedProduse.forEach(produs => {
                 const comandaProdus = comanda.produse.find(cp => cp.id_produs === produs.id);
                 row.push(comandaProdus ? comandaProdus.cantitate : '-');
             });
-
             row.push(comanda.total);
             return row;
+        });
+
+        // Determine which product columns have any non '-' value
+        const productCount = sortedProduse.length;
+        const productHasValue = new Array(productCount).fill(false);
+        preliminaryRows.forEach(row => {
+            for (let i = 0; i < productCount; i++) {
+                const cell = row[1 + i]; // offset 1 for PACIENT column
+                if (cell !== '-' && cell !== null && cell !== undefined && cell !== '') productHasValue[i] = true;
+            }
+        });
+
+        // Build headers including only products that have at least one non '-' value
+        const includedProducts = sortedProduse.filter((_, idx) => productHasValue[idx]);
+        const productNames = includedProducts.map(p => p.nume);
+        const headers = ['PACIENT', ...productNames.map(p => p.toUpperCase()), 'TOTAL'].map(h => h.toUpperCase());
+
+        // Build final sheet data by including only columns that passed the filter
+        const sheetData = preliminaryRows.map(row => {
+            const base = [row[0]] as (string | number)[];
+            // include only product columns that have values
+            for (let i = 0; i < productCount; i++) {
+                if (!productHasValue[i]) continue;
+                base.push(row[1 + i]);
+            }
+            base.push(row[row.length - 1]); // total
+            return base;
         });
 
         const totalSum = comenziDoctor.reduce((sum, c) => sum + c.total, 0);

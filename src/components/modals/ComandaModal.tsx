@@ -18,13 +18,17 @@ interface ComandaModalProps {
 }
 
 const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, comanda }) => {
-  const { doctori, produse: allProduse, tehnicieni, updateComandaTehnician } = useData();
+  const { doctori, pacienti, produse: allProduse, tehnicieni, updateComandaTehnician } = useData();
 
   const [doctorInput, setDoctorInput] = useState('');
   const [pacientInput, setPacientInput] = useState('');
-  const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
+  // selectedDoctorId: number | 'new' | null
+  const [selectedDoctorId, setSelectedDoctorId] = useState<number | 'new' | null>(null);
+  // selectedPacientId not used currently (we use pacientInput for new patients)
   
-  const [selectedProduse, setSelectedProduse] = useState<ComandaProdus[]>([]);
+  // Local product type allows empty string for cantitate while editing
+  type LocalComandaProdus = Omit<ComandaProdus, 'cantitate'> & { cantitate: number | string };
+  const [selectedProduse, setSelectedProduse] = useState<LocalComandaProdus[]>([]);
   const [dataStart, setDataStart] = useState<Date | undefined>();
   const [termenLimita, setTermenLimita] = useState<Date | undefined>();
   const [reducere, setReducere] = useState<number | string>(0);
@@ -33,33 +37,57 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
   const isFinalized = useMemo(() => comanda?.status === 'Finalizată', [comanda]);
 
   const pacientiList = useMemo(() => {
-    if (!selectedDoctorId) return [];
-    const doctor = doctori.find(d => d.id === selectedDoctorId);
-    return doctor ? doctor.pacienti : [];
-  }, [selectedDoctorId, doctori]);
+    if (typeof selectedDoctorId !== 'number') return [];
+    return pacienti.filter(p => p.id_doctor === selectedDoctorId);
+  }, [selectedDoctorId, pacienti]);
+
+  const [doctorSearch, setDoctorSearch] = useState('');
+  const [pacientSearch, setPacientSearch] = useState('');
+  const [showDoctorSuggestions, setShowDoctorSuggestions] = useState(false);
+  const [showPacientSuggestions, setShowPacientSuggestions] = useState(false);
+
+  const filteredDoctorOptions = useMemo(() => {
+    const q = doctorSearch.trim().toLowerCase();
+    if (!q) return doctori;
+    return doctori.filter(d => d.nume.toLowerCase().includes(q));
+  }, [doctorSearch, doctori]);
+
+  const filteredPacientOptions = useMemo(() => {
+    const q = pacientSearch.trim().toLowerCase();
+    if (!q) return pacientiList;
+    return pacientiList.filter(p => p.nume.toLowerCase().includes(q));
+  }, [pacientSearch, pacientiList]);
+
+  // suggestion/typeahead removed: using native selects for Android compatibility
 
   useEffect(() => {
     if (isOpen) {
         if (comanda) {
             const doc = doctori.find(d => d.id === comanda.id_doctor);
             const pac = doc?.pacienti.find(p => p.id === comanda.id_pacient);
-            setDoctorInput(doc?.nume || '');
-            setSelectedDoctorId(doc?.id || null);
+      setDoctorInput(doc?.nume || '');
+      setSelectedDoctorId(doc?.id || null);
             setPacientInput(pac?.nume || '');
-            setSelectedProduse(comanda.produse);
+            // map produse to local type (cantitate may be string in UI)
+            setSelectedProduse(comanda.produse.map(p => ({ ...p, cantitate: p.cantitate })));
             setDataStart(new Date(comanda.data_start));
             setTermenLimita(new Date(comanda.termen_limita));
             setReducere(comanda.reducere || 0);
             setSelectedTehnician(comanda.tehnician || '');
         } else {
-            setDoctorInput('');
-            setPacientInput('');
-            setSelectedDoctorId(null);
-            setSelectedProduse([]);
-            setDataStart(new Date());
-            setTermenLimita(undefined);
-            setReducere(0);
-            setSelectedTehnician('');
+      // Reset all fields for creating a new comanda
+      setDoctorInput('');
+      setDoctorSearch('');
+      setPacientInput('');
+      setPacientSearch('');
+      setSelectedDoctorId(null);
+      setShowDoctorSuggestions(false);
+      setShowPacientSuggestions(false);
+      setSelectedProduse([]);
+      setDataStart(new Date());
+      setTermenLimita(undefined);
+      setReducere(0);
+      setSelectedTehnician('');
         }
     }
   }, [comanda, isOpen, doctori]);
@@ -67,13 +95,14 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
   const total = useMemo(() => {
     const subtotal = selectedProduse.reduce((acc, p) => {
       const produsInfo = allProduse.find(pr => pr.id === p.id_produs);
-      return acc + (produsInfo?.pret || 0) * p.cantitate;
+      const cant = Number(p.cantitate) || 0;
+      return acc + (produsInfo?.pret || 0) * cant;
     }, 0);
     return subtotal - (Number(reducere) || 0);
   }, [selectedProduse, reducere, allProduse]);
 
   const handleAddProdus = () => {
-    setSelectedProduse([...selectedProduse, { id_produs: allProduse[0]?.id || 0, cantitate: 1 }]);
+    setSelectedProduse([...selectedProduse, { id_produs: allProduse[0]?.id || 0, cantitate: '' }]);
   };
 
   const handleRemoveProdus = (index: number) => {
@@ -86,7 +115,7 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
     setSelectedProduse(updated);
   };
   
-  const handleCantitateChange = (index: number, newCantitate: number) => {
+  const handleCantitateChange = (index: number, newCantitate: number | string) => {
     const updated = [...selectedProduse];
     updated[index].cantitate = newCantitate;
     setSelectedProduse(updated);
@@ -101,18 +130,45 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
         return;
     }
 
-    const existingDoctor = doctori.find(d => d.nume.toLowerCase() === doctorInput.toLowerCase());
-    let id_doctor = existingDoctor?.id;
-    const isNewDoctor = !existingDoctor && doctorInput.length > 0;
+    // Determine doctor id / new status based on selectedDoctorId or typed doctorInput
+    let id_doctor: number | string | undefined = undefined;
+    let isNewDoctor = false;
+    if (selectedDoctorId === 'new') {
+      if (doctorInput && doctorInput.trim().length > 0) {
+        isNewDoctor = true;
+        id_doctor = doctorInput.trim();
+      }
+    } else if (typeof selectedDoctorId === 'number') {
+      id_doctor = selectedDoctorId;
+    } else if (doctorInput && doctorInput.trim().length > 0) {
+      const existingDoctor = doctori.find(d => d.nume.toLowerCase() === doctorInput.toLowerCase());
+      if (existingDoctor) id_doctor = existingDoctor.id;
+      else {
+        isNewDoctor = true;
+        id_doctor = doctorInput.trim();
+      }
+    }
 
-    const existingPacient = existingDoctor?.pacienti.find(p => p.nume.toLowerCase() === pacientInput.toLowerCase());
-    let id_pacient = existingPacient?.id;
-    const isNewPacient = !existingPacient && pacientInput.length > 0;
+    // Determine pacient id / new status
+    let id_pacient: number | string | undefined = undefined;
+    let isNewPacient = false;
+    // If doctor is an existing id, search its pacienti for matching name
+    if (typeof id_doctor === 'number') {
+      const patient = pacientiList.find(p => p.nume.toLowerCase() === pacientInput.toLowerCase());
+      if (patient) id_pacient = patient.id;
+      else if (pacientInput && pacientInput.trim().length > 0) {
+        isNewPacient = true;
+        id_pacient = pacientInput.trim();
+      }
+    } else {
+      // doctor is new or not selected: treat pacientInput as new pacient name if provided
+      if (pacientInput && pacientInput.trim().length > 0) {
+        isNewPacient = true;
+        id_pacient = pacientInput.trim();
+      }
+    }
 
-    if (!id_doctor && isNewDoctor) id_doctor = doctorInput as any;
-    if (!id_pacient && isNewPacient) id_pacient = pacientInput as any;
-
-    if (!id_doctor || !id_pacient || !dataStart || !termenLimita || selectedProduse.length === 0) {
+  if (!id_doctor || !id_pacient || !dataStart || !termenLimita || selectedProduse.length === 0) {
         toast.error("Vă rugăm completați toate câmpurile obligatorii: Doctor, Pacient, Produse, și datele limită.");
         return;
     }
@@ -146,27 +202,120 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
                 </Dialog.Title>
                 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <Label htmlFor="doctor-input">Doctor (alege sau adaugă nou)</Label>
-                        <Input id="doctor-input" list="doctori-list" value={doctorInput} onChange={e => { setDoctorInput(e.target.value); const doc = doctori.find(d => d.nume === e.target.value); setSelectedDoctorId(doc?.id || null); }} disabled={isFinalized} />
-                        <datalist id="doctori-list">{doctori.map(d => <option key={d.id} value={d.nume} />)}</datalist>
-                    </div>
-                     <div>
-                        <Label htmlFor="pacient-input">Pacient (alege sau adaugă nou)</Label>
-                        <Input id="pacient-input" list="pacienti-list" value={pacientInput} onChange={e => setPacientInput(e.target.value)} disabled={!doctorInput || isFinalized}/>
-                        <datalist id="pacienti-list">{pacientiList.map(p => <option key={p.id} value={p.nume} />)}</datalist>
-                    </div>
+          <div className="relative">
+            <Label htmlFor="doctor-select">Doctor (alege sau adaugă nou)</Label>
+            {/* Integrated combobox: input + dropdown list (touch-friendly) */}
+            <div>
+              <Input
+                id="doctor-combobox"
+                placeholder="Alege sau tastează doctor..."
+                value={doctorSearch || doctorInput}
+                onChange={e => {
+                  const val = e.target.value;
+                  setDoctorSearch(val);
+                  setDoctorInput(val);
+                  const trimmed = val.trim().toLowerCase();
+                  // if the typed value exactly matches an existing doctor, auto-select them
+                  const match = doctori.find(d => d.nume.toLowerCase() === trimmed);
+                  if (match) {
+                    setSelectedDoctorId(match.id);
+                    setPacientInput('');
+                    setPacientSearch('');
+                    setShowDoctorSuggestions(false);
+                  } else {
+                    if (typeof selectedDoctorId === 'number') setSelectedDoctorId(null);
+                  }
+                }}
+                onFocus={() => setShowDoctorSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowDoctorSuggestions(false), 150)}
+                autoComplete="off"
+                name="doctor-combobox"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={isFinalized}
+              />
+              {showDoctorSuggestions && (
+                <ul className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto touch-auto text-gray-900 dark:text-white shadow">
+                  {filteredDoctorOptions.map(d => (
+                    <li key={d.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onPointerDown={() => {
+                      setDoctorInput(d.nume);
+                      setDoctorSearch('');
+                      setSelectedDoctorId(d.id);
+                      setShowDoctorSuggestions(false);
+                      setPacientInput('');
+                    }} onClick={() => { setDoctorInput(d.nume); setDoctorSearch(''); setSelectedDoctorId(d.id); setShowDoctorSuggestions(false); setPacientInput(''); }}>{d.nume}</li>
+                  ))}
+                  <li className="p-2 border-t text-sm text-gray-600 dark:text-gray-400">Scrie un nume nou pentru a crea doctor</li>
+                </ul>
+              )}
+              {/* Hidden select kept for form semantics & Android fallback when needed */}
+              <select id="doctor-select" value={selectedDoctorId ?? ''} onChange={e => {
+                const val = e.target.value;
+                if (val === '__new') {
+                  setSelectedDoctorId('new');
+                  setDoctorInput('');
+                } else {
+                  const id = Number(val);
+                  setSelectedDoctorId(id);
+                  const doc = doctori.find(d => d.id === id);
+                  setDoctorInput(doc?.nume || '');
+                  setPacientInput('');
+                }
+              }} disabled={isFinalized} className="hidden">
+                <option value="">-- Alege Doctor --</option>
+                {filteredDoctorOptions.map(d => <option key={d.id} value={d.id}>{d.nume}</option>)}
+                <option value="__new">Adaugă nou...</option>
+              </select>
+            </div>
+          </div>
+           <div>
+            <Label htmlFor="pacient-select">Pacient (alege sau adaugă nou)</Label>
+            {/* Pacient combobox (depends on selected doctor) */}
+            <div className="relative">
+              <Input
+                id="pacient-combobox"
+                placeholder={(selectedDoctorId || doctorInput.trim() !== '') ? 'Alege sau tastează pacient...' : 'Selectează mai întâi un doctor'}
+                value={pacientSearch || pacientInput}
+                onChange={e => {
+                  setPacientSearch(e.target.value);
+                  setPacientInput(e.target.value);
+                }}
+                onFocus={() => setShowPacientSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowPacientSuggestions(false), 150)}
+                autoComplete="off"
+                name="pacient-combobox"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={isFinalized || (!selectedDoctorId && doctorInput.trim() === '')}
+              />
+              {showPacientSuggestions && (
+                <ul className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto touch-auto text-gray-900 dark:text-white shadow">
+                  {filteredPacientOptions.length > 0 ? filteredPacientOptions.map(p => (
+                    <li key={p.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onPointerDown={() => { setPacientInput(p.nume); setPacientSearch(''); setShowPacientSuggestions(false); }} onClick={() => { setPacientInput(p.nume); setPacientSearch(''); setShowPacientSuggestions(false); }}>{p.nume}</li>
+                  )) : (
+                    <li className="p-2 text-sm text-gray-600 dark:text-gray-400">Niciun pacient găsit pentru acest doctor</li>
+                  )}
+                  <li className="p-2 border-t text-sm text-gray-600 dark:text-gray-400">Scrie un nume nou pentru a crea pacient</li>
+                </ul>
+              )}
+              <select id="pacient-select" value={pacientInput} onChange={e => { const val = e.target.value; if (val === '__new') setPacientInput(''); else setPacientInput(val); }} disabled className="hidden">
+                <option value="">-- Alege Pacient --</option>
+                {filteredPacientOptions.map(p => <option key={p.id} value={p.nume}>{p.nume}</option>)}
+                <option value="__new">Adaugă nou...</option>
+              </select>
+            </div>
+          </div>
                 </div>
 
                 <div className="mt-4">
                     <Label>Produse</Label>
-                    <div className="space-y-2 rounded-md border dark:border-gray-600 p-2">
+          <div className="space-y-2 rounded-md border dark:border-gray-600 p-2">
                         {selectedProduse.map((p, index) => (
                             <div key={index} className="flex items-center gap-2">
-                                <select value={p.id_produs} onChange={e => handleProdusChange(index, Number(e.target.value))} className="flex-grow p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white" disabled={isFinalized}>
-                                    {allProduse.map(prod => <option key={prod.id} value={prod.id}>{prod.nume}</option>)}
-                                </select>
-                                <Input type="number" value={p.cantitate} onChange={e => handleCantitateChange(index, Number(e.target.value))} className="w-20" min="1" disabled={isFinalized} />
+                <select value={p.id_produs} onChange={e => handleProdusChange(index, Number(e.target.value))} className="flex-grow p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white" disabled={isFinalized}>
+                  {allProduse.map(prod => <option key={prod.id} value={prod.id}>{prod.nume}</option>)}
+                </select>
+        <Input type="number" value={p.cantitate as any} onChange={e => handleCantitateChange(index, e.target.value)} className="w-20" min="0" disabled={isFinalized} />
                                 {!isFinalized && <Button variant="ghost" size="icon" onClick={() => handleRemoveProdus(index)}><Trash2 className="w-4 h-4 text-danger"/></Button>}
                             </div>
                         ))}

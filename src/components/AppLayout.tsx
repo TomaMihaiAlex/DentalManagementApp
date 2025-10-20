@@ -4,7 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { LayoutDashboard, Users, ShoppingCart, Package, HardHat, LogOut, Menu, X } from 'lucide-react';
 
 const navItems = [
-  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Doctori', path: '/doctori', icon: Users },
   { name: 'Comenzi', path: '/comenzi', icon: ShoppingCart },
   { name: 'Produse', path: '/produse', icon: Package },
