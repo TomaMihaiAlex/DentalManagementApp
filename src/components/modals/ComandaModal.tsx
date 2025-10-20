@@ -214,16 +214,26 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
                   const val = e.target.value;
                   setDoctorSearch(val);
                   setDoctorInput(val);
+                  setShowDoctorSuggestions(true);
                   const trimmed = val.trim().toLowerCase();
                   // if the typed value exactly matches an existing doctor, auto-select them
-                  const match = doctori.find(d => d.nume.toLowerCase() === trimmed);
-                  if (match) {
-                    setSelectedDoctorId(match.id);
+                  const exactMatch = doctori.find(d => d.nume.toLowerCase() === trimmed);
+                  if (exactMatch) {
+                    setSelectedDoctorId(exactMatch.id);
                     setPacientInput('');
                     setPacientSearch('');
                     setShowDoctorSuggestions(false);
                   } else {
-                    if (typeof selectedDoctorId === 'number') setSelectedDoctorId(null);
+                    // if there's exactly one filtered option and the user typed at least 2 chars,
+                    // auto-select it so pacient list updates while typing (good for tablets/phones)
+                    const options = doctori.filter(d => d.nume.toLowerCase().includes(trimmed));
+                    if (trimmed.length >= 2 && options.length === 1) {
+                      setSelectedDoctorId(options[0].id);
+                      setPacientInput('');
+                      setPacientSearch('');
+                    } else {
+                      if (typeof selectedDoctorId === 'number') setSelectedDoctorId(null);
+                    }
                   }
                 }}
                 onFocus={() => setShowDoctorSuggestions(true)}
@@ -235,15 +245,9 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
                 disabled={isFinalized}
               />
               {showDoctorSuggestions && (
-                <ul className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto touch-auto text-gray-900 dark:text-white shadow">
+                <ul style={{ WebkitOverflowScrolling: 'touch', touchAction: 'auto' }} className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto text-gray-900 dark:text-white shadow">
                   {filteredDoctorOptions.map(d => (
-                    <li key={d.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onPointerDown={() => {
-                      setDoctorInput(d.nume);
-                      setDoctorSearch('');
-                      setSelectedDoctorId(d.id);
-                      setShowDoctorSuggestions(false);
-                      setPacientInput('');
-                    }} onClick={() => { setDoctorInput(d.nume); setDoctorSearch(''); setSelectedDoctorId(d.id); setShowDoctorSuggestions(false); setPacientInput(''); }}>{d.nume}</li>
+                    <li key={d.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onClick={() => { setDoctorInput(d.nume); setDoctorSearch(''); setSelectedDoctorId(d.id); setShowDoctorSuggestions(false); setPacientInput(''); }}>{d.nume}</li>
                   ))}
                   <li className="p-2 border-t text-sm text-gray-600 dark:text-gray-400">Scrie un nume nou pentru a crea doctor</li>
                 </ul>
@@ -289,9 +293,9 @@ const ComandaModal: React.FC<ComandaModalProps> = ({ isOpen, onClose, onSave, co
                 disabled={isFinalized || (!selectedDoctorId && doctorInput.trim() === '')}
               />
               {showPacientSuggestions && (
-                <ul className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto touch-auto text-gray-900 dark:text-white shadow">
+                <ul style={{ WebkitOverflowScrolling: 'touch', touchAction: 'auto' }} className="absolute left-0 right-0 z-50 w-full bg-white dark:bg-gray-900 border rounded mt-1 max-h-56 md:max-h-64 overflow-auto text-gray-900 dark:text-white shadow">
                   {filteredPacientOptions.length > 0 ? filteredPacientOptions.map(p => (
-                    <li key={p.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onPointerDown={() => { setPacientInput(p.nume); setPacientSearch(''); setShowPacientSuggestions(false); }} onClick={() => { setPacientInput(p.nume); setPacientSearch(''); setShowPacientSuggestions(false); }}>{p.nume}</li>
+                    <li key={p.id} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-gray-900 dark:text-white" onClick={() => { setPacientInput(p.nume); setPacientSearch(''); setShowPacientSuggestions(false); }}>{p.nume}</li>
                   )) : (
                     <li className="p-2 text-sm text-gray-600 dark:text-gray-400">Niciun pacient găsit pentru acest doctor</li>
                   )}
