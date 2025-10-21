@@ -1,8 +1,7 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
-import * as XLSX from 'xlsx';
 import { Comanda, Doctor, Produs } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
@@ -19,143 +18,77 @@ export const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'RON' }).format(amount);
 };
 
-export const exportComenziToExcel = (
-    comenzi: Comanda[],
-    doctori: Doctor[],
-    produse: Produs[],
+export const exportComenziToExcel = async (
+    // Keep signature compatible for callers that pass domain arrays; only dates are required for server export.
+    _comenzi: Comanda[] | undefined,
+    _doctori: Doctor[] | undefined,
+    _produse: Produs[] | undefined,
     startDate: Date,
     endDate: Date
 ) => {
-    // Filter only for 'Finalizată' orders within the selected date range based on 'data_finalizare'
-    const filteredComenzi = comenzi.filter(c => {
-        if (c.status !== 'Finalizată' || !c.data_finalizare) {
-            return false;
-        }
-        const comandaDate = parseISO(c.data_finalizare);
-        return isWithinInterval(comandaDate, { start: startDate, end: endDate });
-    });
-
-    const groupedByDoctor = filteredComenzi.reduce((acc, comanda) => {
-        (acc[comanda.id_doctor] = acc[comanda.id_doctor] || []).push(comanda);
-        return acc;
-    }, {} as Record<number, Comanda[]>);
-
-    for (const doctorId in groupedByDoctor) {
-        const doctor = doctori.find(d => d.id === Number(doctorId));
-        if (!doctor) continue;
-
-        const comenziDoctor = groupedByDoctor[doctorId];
-        // Sort products alphabetically by name so exported columns are ordered
-        const sortedProduse = [...produse].sort((a, b) => a.nume.localeCompare(b.nume, 'ro'));
-
-        // Build a preliminary matrix of values so we can detect empty columns (columns that are all '-')
-        const preliminaryRows = comenziDoctor.map(comanda => {
-            const pacient = doctor.pacienti.find(p => p.id === comanda.id_pacient);
-            const row: (string | number)[] = [pacient?.nume || 'N/A'];
-            sortedProduse.forEach(produs => {
-                const comandaProdus = comanda.produse.find(cp => cp.id_produs === produs.id);
-                row.push(comandaProdus ? comandaProdus.cantitate : '-');
-            });
-            row.push(comanda.total);
-            return row;
+    // This client-side helper delegates the Excel/ZIP generation to the server-side exporter
+    // which uses a secure, audited library (exceljs) and returns a ZIP containing per-doctor .xlsx files.
+    const payload = { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
+    const endpointRelative = '/api/export-laborator';
+    let res: Response | null = null;
+    let firstError: any = null;
+    try {
+        res = await fetch(endpointRelative, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            credentials: 'same-origin'
         });
-
-        // Determine which product columns have any non '-' value
-        const productCount = sortedProduse.length;
-        const productHasValue = new Array(productCount).fill(false);
-        preliminaryRows.forEach(row => {
-            for (let i = 0; i < productCount; i++) {
-                const cell = row[1 + i]; // offset 1 for PACIENT column
-                if (cell !== '-' && cell !== null && cell !== undefined && cell !== '') productHasValue[i] = true;
-            }
-        });
-
-        // Build headers including only products that have at least one non '-' value
-        const includedProducts = sortedProduse.filter((_, idx) => productHasValue[idx]);
-        const productNames = includedProducts.map(p => p.nume);
-        const headers = ['PACIENT', ...productNames.map(p => p.toUpperCase()), 'TOTAL'].map(h => h.toUpperCase());
-
-        // Build final sheet data by including only columns that passed the filter
-        const sheetData = preliminaryRows.map(row => {
-            const base = [row[0]] as (string | number)[];
-            // include only product columns that have values
-            for (let i = 0; i < productCount; i++) {
-                if (!productHasValue[i]) continue;
-                base.push(row[1 + i]);
-            }
-            base.push(row[row.length - 1]); // total
-            return base;
-        });
-
-        const totalSum = comenziDoctor.reduce((sum, c) => sum + c.total, 0);
-        const totalRow = ['TOTAL SUMĂ', ...Array(productNames.length).fill(''), totalSum];
-
-        const finalSheetData = [
-            [doctor.nume.toUpperCase()],
-            headers,
-            ...sheetData,
-            totalRow
-        ];
-
-        const ws = XLSX.utils.aoa_to_sheet(finalSheetData);
-
-        // --- STYLING ---
-        const borderStyle = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-        const centerAlign = { alignment: { horizontal: 'center', vertical: 'center' } };
-        
-        const titleStyle = { font: { name: 'Calibri', sz: 16, bold: true }, ...centerAlign };
-        const headerStyle = { font: { name: 'Calibri', sz: 12, bold: true }, fill: { fgColor: { rgb: "E0E0E0" } }, border: borderStyle, ...centerAlign };
-        const totalLabelStyle = { font: { name: 'Calibri', sz: 12, bold: true }, border: borderStyle, ...centerAlign };
-        const totalValueStyle = { font: { name: 'Calibri', sz: 12, bold: true }, numFmt: '#,##0.00 "RON"', border: borderStyle, ...centerAlign };
-        const currencyStyle = { numFmt: '#,##0.00 "RON"', border: borderStyle, ...centerAlign };
-        const defaultCellStyle = { border: borderStyle, ...centerAlign };
-
-        // 1. Column Widths
-        const colWidths = headers.map((header, i) => {
-            const allValues = [header, ...finalSheetData.map(row => row[i])];
-            const maxLength = Math.max(...allValues.filter(v => v != null).map(v => v.toString().length));
-            return { wch: maxLength + 5 }; // +5 for padding
-        });
-        ws['!cols'] = colWidths;
-
-        // 2. Apply Styles
-        // Title
-        ws['A1'].s = titleStyle;
-        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-        ws['!rows'] = [{ hpt: 25 }]; // Title row height
-
-        // Headers
-        headers.forEach((_, c) => {
-            const cellRef = XLSX.utils.encode_cell({ r: 1, c });
-            if (ws[cellRef]) ws[cellRef].s = headerStyle;
-        });
-
-        // Data Rows
-        sheetData.forEach((row, r) => {
-            row.forEach((cellValue, c) => {
-                const cellRef = XLSX.utils.encode_cell({ r: 2 + r, c });
-                if (!ws[cellRef]) ws[cellRef] = { t: typeof cellValue === 'number' ? 'n' : 's', v: cellValue };
-                
-                if (c === headers.length - 1) { // Total column
-                    ws[cellRef].s = currencyStyle;
-                } else {
-                    ws[cellRef].s = defaultCellStyle;
-                }
-            });
-        });
-        
-        // Total Row
-        const totalRowNum = 2 + sheetData.length;
-        const totalLabelCellRef = XLSX.utils.encode_cell({ r: totalRowNum, c: 0 });
-        const totalValueCellRef = XLSX.utils.encode_cell({ r: totalRowNum, c: headers.length - 1 });
-        if (ws[totalLabelCellRef]) ws[totalLabelCellRef].s = totalLabelStyle;
-        if (ws[totalValueCellRef]) ws[totalValueCellRef].s = totalValueStyle;
-
-        const wb = XLSX.utils.book_new();
-        const safeSheetName = doctor.nume.replace(/[:\\/?*[\]]/g, '').substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
-
-        const filename = `${doctor.nume.replace(/\s/g, '_')}_${format(startDate, 'dd-MM-yyyy')}_${format(endDate, 'dd-MM-yyyy')}.xlsx`;
-        XLSX.writeFile(wb, filename);
+    } catch (e) {
+        firstError = e;
     }
+
+    // If relative endpoint returned 404 or failed (common when dev server isn't proxying),
+    // retry against the local export server on port 3000.
+    if ((!res || res.status === 404) && typeof window !== 'undefined') {
+        const fallbackBase = `${window.location.protocol}//${window.location.hostname}:3000`;
+        const fallbackUrl = `${fallbackBase}${endpointRelative}`;
+        try {
+            res = await fetch(fallbackUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                mode: 'cors'
+            });
+        } catch (e) {
+            // if first attempt had an error, prefer that message; otherwise keep this one
+            if (!firstError) firstError = e;
+        }
+    }
+
+    if (!res) {
+        throw new Error(`Export failed: no response from server (${firstError && firstError.message ? firstError.message : 'network error'})`);
+    }
+
+    if (!res.ok) {
+        // Prefer structured JSON error from the server if available
+        let details = '';
+        try {
+            const json = await res.json().catch(() => null);
+            if (json && typeof json === 'object') {
+                details = json.details || json.error || JSON.stringify(json);
+            } else {
+                details = await res.text().catch(() => '');
+            }
+        } catch (e) {
+            details = (await res.text().catch(() => '')) || '';
+        }
+        throw new Error(`Export failed: ${res.status} ${res.statusText} ${details}`);
+    }
+
+    const blob = await res.blob();
+    const filename = `export_${format(startDate, 'dd-MM-yyyy')}_${format(endDate, 'dd-MM-yyyy')}.zip`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
 };

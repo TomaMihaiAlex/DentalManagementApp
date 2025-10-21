@@ -1,0 +1,1 @@
+{"error":"export failed","details":"Supabase env vars not set (SUPABASE_URL / SUPABASE_KEY)"}

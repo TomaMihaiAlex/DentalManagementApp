@@ -1,0 +1,8 @@
+Fisa Laborator,,,,
+,,,,
+,,,,
+{{NUME_DOCTOR}},,, ,
+{{NUME_PACIENT}},{{PRODUS}},{{CANTITATE}},{{PREȚ}},
+,{{TOTAL: SUM( PRETURI COLOANA D)}},, ,
+,,,,
+,,,,

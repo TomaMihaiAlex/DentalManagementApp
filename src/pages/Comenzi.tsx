@@ -126,13 +126,19 @@ const Comenzi: React.FC = () => {
         }
     };
 
-    const handleExport = (startDate: Date, endDate: Date) => {
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleExport = async (startDate: Date, endDate: Date) => {
         try {
-            exportComenziToExcel(comenzi, doctori, produse, startDate, endDate);
-            toast.success("Exportul a fost inițiat. Verificați descărcările.");
+            setIsExporting(true);
+            await exportComenziToExcel(comenzi, doctori, produse, startDate, endDate);
+            toast.success("Exportul a fost generat. Verificați descărcările.");
         } catch (error) {
-            console.error("Export failed:", error);
-            toast.error("Exportul a eșuat.");
+              console.error("Export failed:", error);
+              const msg = error && (error as any).message ? (error as any).message : 'Exportul a eșuat.';
+              toast.error(msg);
+        } finally {
+            setIsExporting(false);
         }
     };
 
@@ -278,7 +284,7 @@ const Comenzi: React.FC = () => {
             <ConfirmFinalizeModal isOpen={isConfirmFinalizeModalOpen} onClose={() => setConfirmFinalizeModalOpen(false)} onConfirm={handleFinalizeConfirm} data={dataForFinalization} />
             <ConfirmDeleteModal isOpen={isDeleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={handleDeleteConfirm} title="Confirmă Ștergerea Comenzii" description="Ești sigur că vrei să ștergi această comandă?" />
             <ConfirmDeleteModal isOpen={isReopenModalOpen} onClose={() => setReopenModalOpen(false)} onConfirm={handleReopenConfirm} title="Confirmă Redeschiderea" description="Ești sigur că vrei să redeschizi această comandă? Statutul va fi schimbat înapoi la 'În progres'." confirmText="Da, redeschide" />
-            <ExportExcelModal isOpen={isExportModalOpen} onClose={() => setExportModalOpen(false)} onExport={handleExport} />
+            <ExportExcelModal isOpen={isExportModalOpen} onClose={() => setExportModalOpen(false)} onExport={handleExport} isExporting={isExporting} />
         </div>
     );
 };

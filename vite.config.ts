@@ -12,6 +12,14 @@ export default defineConfig({
   },
   server: {
     host: true,
+    proxy: {
+      // Proxy API requests in development to the local export server
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
     // allow common ngrok host patterns and opt-in to allow all hosts via env
     allowedHosts: [
       '.ngrok.io',
