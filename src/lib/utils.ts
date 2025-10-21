@@ -30,39 +30,48 @@ export const exportComenziToExcel = async (
     // which uses a secure, audited library (exceljs) and returns a ZIP containing per-doctor .xlsx files.
     const payload = { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
     const endpointRelative = '/api/export-laborator';
-    let res: Response | null = null;
-    let firstError: any = null;
-    try {
-        res = await fetch(endpointRelative, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            credentials: 'same-origin'
-        });
-    } catch (e) {
-        firstError = e;
+    const tryUrls: string[] = [];
+    // prefer relative first
+    tryUrls.push(endpointRelative);
+    if (typeof window !== 'undefined') {
+        const host = window.location.hostname || 'localhost';
+        const proto = window.location.protocol || 'http:';
+        tryUrls.push(`${proto}//${host}:3000${endpointRelative}`);
+        // also try 127.0.0.1 in case hostname resolves oddly
+        tryUrls.push(`${proto}//127.0.0.1:3000${endpointRelative}`);
+    } else {
+        tryUrls.push(`http://localhost:3000${endpointRelative}`);
     }
 
-    // If relative endpoint returned 404 or failed (common when dev server isn't proxying),
-    // retry against the local export server on port 3000.
-    if ((!res || res.status === 404) && typeof window !== 'undefined') {
-        const fallbackBase = `${window.location.protocol}//${window.location.hostname}:3000`;
-        const fallbackUrl = `${fallbackBase}${endpointRelative}`;
+    let res: Response | null = null;
+    let lastError: any = null;
+    const timeoutMs = 60_000; // 60s
+
+    for (const url of tryUrls) {
         try {
-            res = await fetch(fallbackUrl, {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeoutMs);
+            res = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/zip, application/json' },
                 body: JSON.stringify(payload),
-                mode: 'cors'
+                credentials: 'same-origin',
+                mode: 'cors',
+                signal: controller.signal
             });
+            clearTimeout(id);
+            // if we got a valid Response (even 4xx/5xx) stop trying further
+            break;
         } catch (e) {
-            // if first attempt had an error, prefer that message; otherwise keep this one
-            if (!firstError) firstError = e;
+            lastError = e;
+            // try next URL
+            res = null;
         }
     }
 
     if (!res) {
-        throw new Error(`Export failed: no response from server (${firstError && firstError.message ? firstError.message : 'network error'})`);
+        const msg = lastError && lastError.name === 'AbortError' ? 'Request timed out' : (lastError && lastError.message ? lastError.message : 'network error');
+        throw new Error(`Export failed: no response from server (${msg}). Please ensure the export server is running (try running 'node server/server.cjs' or 'node server/run_local_export.mjs' locally).`);
     }
 
     if (!res.ok) {
@@ -79,6 +88,14 @@ export const exportComenziToExcel = async (
             details = (await res.text().catch(() => '')) || '';
         }
         throw new Error(`Export failed: ${res.status} ${res.statusText} ${details}`);
+    }
+
+    // If server returned JSON (even with 200) treat it as an error/debug response
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+        const json = await res.json().catch(() => null);
+        const details = json && typeof json === 'object' ? (json.message || json.error || JSON.stringify(json)) : 'Server returned JSON';
+        throw new Error(`Export failed: ${details}`);
     }
 
     const blob = await res.blob();
