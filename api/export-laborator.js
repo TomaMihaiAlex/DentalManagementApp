@@ -1,9 +1,9 @@
-const { createClient } = require('@supabase/supabase-js');
-const ExcelJS = require('exceljs');
-const archiver = require('archiver');
-const fs = require('fs');
-const path = require('path');
-const stream = require('stream');
+import { createClient } from '@supabase/supabase-js';
+import ExcelJS from 'exceljs';
+import archiver from 'archiver';
+import fs from 'fs';
+import path from 'path';
+import { PassThrough } from 'stream';
 
 // Simple buffer helper: collect stream to buffer
 function streamToBuffer(readable) {
@@ -149,8 +149,17 @@ async function handler(req, res) {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // fetch doctors and finalized comenzi within the date range
-    const { data: comenzi = [] } = await supabase.from('comenzi').select('*').eq('status', 'Finalizată').gte('data_finalizare', startDate).lte('data_finalizare', endDate);
-    if (!comenzi.length) {
+    // Guard: only apply date filters if provided
+    let comenziQuery = supabase.from('comenzi').select('*').eq('status', 'Finalizată');
+    if (startDate) comenziQuery = comenziQuery.gte('data_finalizare', startDate);
+    if (endDate) comenziQuery = comenziQuery.lte('data_finalizare', endDate);
+    const { data: comenzi = [], error: comenziError } = await comenziQuery;
+    if (comenziError) {
+      console.error('Supabase error fetching comenzi:', comenziError);
+      res.status(500).json({ error: 'Failed fetching comenzi', details: comenziError });
+      return;
+    }
+    if (!comenzi || comenzi.length === 0) {
       res.status(200).json({ message: 'No finalized orders in range' });
       return;
     }
@@ -159,18 +168,53 @@ async function handler(req, res) {
     const pacientIds = Array.from(new Set(comenzi.map(c => c.id_pacient).filter(Boolean)));
     const doctorIds = Array.from(new Set(comenzi.map(c => c.id_doctor).filter(Boolean)));
 
-    const [{ data: pacienti = [] }, { data: doctori = [] }] = await Promise.all([
-      supabase.from('pacienti').select('*').in('id_pacient', pacientIds),
-      supabase.from('doctori').select('*').in('id_doctor', doctorIds)
-    ]);
+    // fetch pacienti and doctori only if we have ids
+    let pacienti = [];
+    let doctori = [];
+    if (pacientIds.length) {
+      const pRes = await supabase.from('pacienti').select('*').in('id_pacient', pacientIds);
+      if (pRes.error) {
+        console.error('Supabase error fetching pacienti:', pRes.error);
+        res.status(500).json({ error: 'Failed fetching pacienti', details: pRes.error });
+        return;
+      }
+      pacienti = pRes.data || [];
+    }
+    if (doctorIds.length) {
+      const dRes = await supabase.from('doctori').select('*').in('id_doctor', doctorIds);
+      if (dRes.error) {
+        console.error('Supabase error fetching doctori:', dRes.error);
+        res.status(500).json({ error: 'Failed fetching doctori', details: dRes.error });
+        return;
+      }
+      doctori = dRes.data || [];
+    }
 
     // fetch comanda_produse for selected comenzi
     const comandaIds = comenzi.map(c => c.id_comanda).filter(Boolean);
-    const { data: comanda_produse = [] } = await supabase.from('comanda_produse').select('*').in('comanda_id', comandaIds);
+    let comanda_produse = [];
+    if (comandaIds.length) {
+      const cpRes = await supabase.from('comanda_produse').select('*').in('comanda_id', comandaIds);
+      if (cpRes.error) {
+        console.error('Supabase error fetching comanda_produse:', cpRes.error);
+        res.status(500).json({ error: 'Failed fetching comanda_produse', details: cpRes.error });
+        return;
+      }
+      comanda_produse = cpRes.data || [];
+    }
 
     // fetch produse referenced
     const produsIds = Array.from(new Set(comanda_produse.map(cp => cp.produs_id).filter(Boolean)));
-    const { data: produse = [] } = await supabase.from('produse').select('*').in('id_produs', produsIds);
+    let produse = [];
+    if (produsIds.length) {
+      const prodRes = await supabase.from('produse').select('*').in('id_produs', produsIds);
+      if (prodRes.error) {
+        console.error('Supabase error fetching produse:', prodRes.error);
+        res.status(500).json({ error: 'Failed fetching produse', details: prodRes.error });
+        return;
+      }
+      produse = prodRes.data || [];
+    }
 
     // build maps
     const pacientMap = new Map(pacienti.map(p => [p.id_pacient, p]));
@@ -225,10 +269,9 @@ async function handler(req, res) {
 }
 
 // Vercel / Netlify compatibility
-module.exports = function (req, res) {
-  // If body is a stream, parse JSON (Vercel has already parsed body normally)
+// Export default handler for ESM environments
+export default async function (req, res) {
   if (req.method === 'GET' || req.method === 'POST') {
-    // ensure JSON body for POST
     if (req.method === 'POST' && !req.body) {
       let data = '';
       req.on('data', chunk => (data += chunk));
@@ -237,9 +280,9 @@ module.exports = function (req, res) {
         handler(req, res);
       });
     } else {
-      handler(req, res);
+      await handler(req, res);
     }
   } else {
     res.status(405).send('Method Not Allowed');
   }
-};
+}
