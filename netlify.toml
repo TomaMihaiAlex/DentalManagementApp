@@ -6,7 +6,7 @@
   force = "true"    # Force build even if no changes detected
 
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "20.19.0"
   CI = "true"       # Ensure we're in CI mode
   NETLIFY_BUILD_SKIP = "false"  # Never skip build
   # Allow the scanner to ignore these VITE_* values which are intentionally
