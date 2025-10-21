@@ -8,3 +8,7 @@ dist/
 /.idea
 /.vscodenode_modules/
 .env
+
+# Ensure build output and env files are ignored
+dist/
+.env
