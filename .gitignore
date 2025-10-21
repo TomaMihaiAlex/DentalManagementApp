@@ -1,14 +1,21 @@
 node_modules/
 dist/
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (do NOT commit secrets)
 .env
 .env.local
 .env.*.local
+
+# OS / Editor files
 /*.log
 /.DS_Store
 /.idea
-/.vscodenode_modules/
-.env
+/.vscode
 
-# Ensure build output and env files are ignored
-dist/
-.env
+# Logs
+*.log
